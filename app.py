@@ -33,7 +33,9 @@ async def security_headers(request: Any, call_next):
         "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
-    if request.url.path == "/":
+    # CRM responses contain client contacts and commercially sensitive numbers.
+    # Do not cache them in the browser, a proxy or an intermediate gateway.
+    if request.url.path == "/" or request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
