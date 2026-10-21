@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 
-def load_app(tmp_path: Path, monkeypatch, key: str = ""):
+def load_app(tmp_path: Path, monkeypatch, key: str = "integration-test-key"):
     monkeypatch.setenv("LEGACY_DATA_PATH", str(tmp_path / "state.json"))
     monkeypatch.setenv("LEGACY_PILOT_ROOT", str(tmp_path / "pilots"))
     if key:
@@ -67,3 +67,14 @@ def test_pilot_pack_endpoint(tmp_path, monkeypatch):
     body = result.json()
     assert len(body["files"]) == 6
     assert Path(body["path"]).is_dir()
+
+def test_without_admin_key_fails_closed(tmp_path, monkeypatch):
+    """Missing configuration is not an 'anonymous mode' for CRM endpoints."""
+    module = load_app(tmp_path, monkeypatch, key="")
+    client = TestClient(module.app)
+    assert client.get("/api/health").json()["ready"] is False
+    assert client.get("/api/prospects").status_code == 503
+    assert client.get("/api/summary").status_code == 503
+    assert client.post("/api/prospects", json={"name": "Blocked"}).status_code == 503
+    assert client.post("/api/pilots", json={"company": "Blocked"}).status_code == 503
+    assert not (tmp_path / "state.json").exists()
