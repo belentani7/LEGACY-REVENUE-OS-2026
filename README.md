@@ -9,8 +9,8 @@ Sistema local para vender y operar un servicio gestionado de recepción y califi
 - Gates comerciales visibles: 20 contactos, 3 demos, 1 propuesta, 1 piloto pagado, 3 clientes retenidos.
 - Calculadora de economía unitaria sin precios de proveedor hardcodeados.
 - Dossier de piloto: oferta, entrevista, baseline ROI, privacidad y pruebas.
-- Persistencia JSON local y atómica.
-- API administrativa opcionalmente protegida con comparación constante.
+- Persistencia JSON local y atómica, operaciones CRM serializadas entre hilos y carpetas de pilotos con nombres únicos (evita colisiones del mismo segundo).
+- **API administrativa obligatoriamente protegida** con clave configurada y comparación constante. Sin `ADMIN_API_KEY`, las rutas de clientes responden HTTP 503; nunca queda un CRM abierto por omisión.
 - Dashboard responsive, teclado, contraste y movimiento reducido.
 
 ## Inicio Windows
@@ -24,10 +24,13 @@ uv run --no-project --with-requirements requirements.txt python app.py
 
 Abrir `http://127.0.0.1:8091`. Introducir la misma clave en el campo superior. La clave nunca se guarda en archivos ni en `localStorage`.
 
+**Obligatorio:** exportar `ADMIN_API_KEY` antes de arrancar, preferiblemente con un secreto generado aleatoriamente de al menos 32 bytes. Copiar `.env.example` a `.env` no basta: este servidor no carga `.env` automáticamente. Nunca incluyas claves reales en Git, formularios de prueba compartidos, capturas o documentación.
+
 ## Verificación
 
 ```powershell
 uv run --no-project --with-requirements requirements.txt python -m pytest -q
+# Comprueba que la API SIN CLAVE devuelve 503 y no guarda leads; con clave, exige cabecera.
 python -m compileall -q app.py core.py
 ```
 
@@ -40,7 +43,8 @@ Vender resultado: menos leads perdidos y más visitas calificadas. No vender “
 - El sistema no negocia inmuebles, aprueba financiación ni responde cuestiones legales.
 - Datos reales solo después de acordar finalidad, retención, acceso y borrado.
 - Telefonía, modelos, mensajería y otros consumos se configuran y presupuestan aparte.
-- No exponer el servidor a Internet sin TLS, autenticación, rate limiting y revisión operativa.
+- No exponer el servidor a Internet sin TLS, autenticación fuerte, límites de peticiones, controles CSRF/Origin, proxy y revisión operativa. La clave compartida está diseñada únicamente para administración local; no es una solución SaaS multiusuario.
+- La protección de concurrencia es intra-proceso (hilos); no ejecutar múltiples workers sobre el mismo JSON sin una base de datos transaccional.
 - No incluir `.env`, datos de clientes o carpetas `pilots/` en paquetes públicos.
 
 ## Estructura
