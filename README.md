@@ -9,7 +9,7 @@ Sistema local para vender y operar un servicio gestionado de recepción y califi
 - Gates comerciales visibles: 20 contactos, 3 demos, 1 propuesta, 1 piloto pagado, 3 clientes retenidos.
 - Calculadora de economía unitaria sin precios de proveedor hardcodeados.
 - Dossier de piloto: oferta, entrevista, baseline ROI, privacidad y pruebas.
-- Persistencia JSON local y atómica, operaciones CRM serializadas entre hilos y carpetas de pilotos con nombres únicos (evita colisiones del mismo segundo).
+- Persistencia JSON local y atómica, operaciones CRM serializadas entre hilos y carpetas de pilotos con nombres únicos (evita colisiones del mismo segundo). El almacenamiento rechaza ficheros incompletos o corruptos sin borrar clientes; los expedientes de piloto se preparan en carpeta temporal y se publican solo cuando los seis archivos están completos.
 - **API administrativa obligatoriamente protegida** con clave configurada y comparación constante. Sin `ADMIN_API_KEY`, las rutas de clientes responden HTTP 503; nunca queda un CRM abierto por omisión.
 - Dashboard responsive, teclado, contraste y movimiento reducido.
 
