@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
+import shutil
 from typing import Any
 from uuid import uuid4
 
@@ -56,6 +57,9 @@ class AtomicJSONStore:
                 raise RuntimeError(f"Datos ilegibles: {self.path.name}") from exc
             if not isinstance(data, dict):
                 raise RuntimeError(f"Formato inválido: {self.path.name}")
+            for key, expected in self.default.items():
+                if key not in data or type(data[key]) is not type(expected):
+                    raise RuntimeError(f"Estructura incompleta o inválida: {self.path.name}")
             return data
 
     def write(self, data: dict[str, Any]) -> None:
@@ -227,7 +231,6 @@ class RevenueOS:
         destination = (self.pilot_root / slug).resolve()
         if self.pilot_root not in destination.parents:
             raise ValueError("Ruta de piloto inválida")
-        destination.mkdir(parents=False, exist_ok=False)
         context = {
             "company": company,
             "contact": clean_text(payload.get("contact"), 160),
@@ -246,8 +249,16 @@ class RevenueOS:
             "05-PLAN-PRUEBAS.md": self._tests(context),
             "pilot.json": json.dumps(context, ensure_ascii=False, indent=2) + "\n",
         }
-        for name, content in files.items():
-            (destination / name).write_text(content, encoding="utf-8")
+        # Assemble in a hidden same-volume directory. A failed write never
+        # leaves an apparently complete pilot package visible in the workspace.
+        temporary = Path(tempfile.mkdtemp(prefix=".pilot-staging-", dir=self.pilot_root))
+        try:
+            for name, content in files.items():
+                (temporary / name).write_text(content, encoding="utf-8")
+            os.replace(temporary, destination)
+        except BaseException:
+            shutil.rmtree(temporary, ignore_errors=True)
+            raise
         return {"folder": slug, "files": sorted(files), "path": str(destination)}
 
     @staticmethod
