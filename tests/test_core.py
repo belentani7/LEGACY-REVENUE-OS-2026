@@ -105,3 +105,47 @@ def test_two_pilot_folders_same_company_do_not_collide(engine: RevenueOS):
     assert Path(first["path"]).is_dir()
     assert Path(second["path"]).is_dir()
     assert len(first["files"]) == len(second["files"]) == 6
+
+
+def test_partial_local_database_fails_closed_instead_of_resetting_clients(tmp_path: Path):
+    state = tmp_path / "broken-state.json"
+    original = '{"prospects":[{"id":"customer"}]}'
+    state.write_text(original, encoding="utf-8")
+    engine = RevenueOS(state, tmp_path / "pilots")
+    with pytest.raises(RuntimeError, match="Estructura incompleta"):
+        engine.create_prospect({"name": "Nuevo cliente"})
+    assert state.read_text(encoding="utf-8") == original
+
+
+def test_pilot_invalid_price_never_creates_a_folder(engine: RevenueOS):
+    before = list(engine.pilot_root.iterdir())
+    with pytest.raises(ValueError):
+        engine.create_pilot_pack({"company": "Empresa Verificada", "pilot_price": -100})
+    assert list(engine.pilot_root.iterdir()) == before
+
+
+def test_pilot_staging_cleaned_when_a_file_write_fails(engine: RevenueOS, monkeypatch):
+    from unittest.mock import patch
+
+    existing = list(engine.pilot_root.iterdir())
+    real_write = Path.write_text
+    calls = []
+
+    def fails_at_second_write(path, content, *args, **kwargs):
+        calls.append(str(path))
+        if len(calls) == 2:
+            raise OSError("disk interrupted")
+        return real_write(path, content, *args, **kwargs)
+
+    with patch.object(Path, "write_text", fails_at_second_write):
+        with pytest.raises(OSError, match="disk interrupted"):
+            engine.create_pilot_pack({"company": "Empresa Fallida"})
+    assert list(engine.pilot_root.iterdir()) == existing
+
+
+def test_successful_pilot_has_no_staging_folders(engine: RevenueOS):
+    result = engine.create_pilot_pack({"company": "Empresa Normal"})
+    assert Path(result["path"]).is_dir()
+    assert len(list(Path(result["path"]).iterdir())) == 6
+    assert not any(p.name.startswith(".pilot-staging-") for p in engine.pilot_root.iterdir())
+
