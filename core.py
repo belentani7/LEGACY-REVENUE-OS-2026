@@ -118,66 +118,66 @@ class RevenueOS:
         return self.store.read().get("prospects", [])
 
     def create_prospect(self, payload: dict[str, Any]) -> dict[str, Any]:
-        name = clean_text(payload.get("name"), 120)
-        if len(name) < 2:
-            raise ValueError("name requiere al menos 2 caracteres")
-        stage = clean_text(payload["stage"], 20) if "stage" in payload else "lead"
-        if stage not in STAGES:
-            raise ValueError(f"stage debe ser uno de: {', '.join(STAGES)}")
-        now = utc_now()
-        item = {
-            "id": uuid4().hex[:12],
-            "name": name,
-            "city": clean_text(payload.get("city"), 80),
-            "contact": clean_text(payload.get("contact"), 160),
-            "vertical": clean_text(payload.get("vertical") or "inmobiliaria", 80),
-            "stage": stage,
-            "setup_fee": self._money(payload.get("setup_fee", 0), "setup_fee"),
-            "monthly_fee": self._money(payload.get("monthly_fee", 0), "monthly_fee"),
-            "variable_cost": self._money(payload.get("variable_cost", 0), "variable_cost"),
-            "next_action": clean_text(payload.get("next_action"), 240),
-            "notes": clean_text(payload.get("notes"), 1000),
-            "created_at": now,
-            "updated_at": now,
-        }
-        data = self.store.read()
-        data.setdefault("prospects", []).append(item)
-        data.setdefault("events", []).append({"at": now, "type": "prospect_created", "id": item["id"]})
-        self.store.write(data)
-        return item
-
-    def update_prospect(self, prospect_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        data = self.store.read()
-        for item in data.get("prospects", []):
-            if item.get("id") != prospect_id:
-                continue
-            if "stage" in payload:
-                stage = clean_text(payload["stage"], 20)
-                if stage not in STAGES:
-                    raise ValueError("stage inválido")
-                item["stage"] = stage
-            for field, limit in (("name", 120), ("city", 80), ("contact", 160), ("vertical", 80), ("next_action", 240), ("notes", 1000)):
-                if field in payload:
-                    item[field] = clean_text(payload[field], limit)
-            for field in ("setup_fee", "monthly_fee", "variable_cost"):
-                if field in payload:
-                    item[field] = self._money(payload[field], field)
-            item["updated_at"] = utc_now()
-            data.setdefault("events", []).append({"at": item["updated_at"], "type": "prospect_updated", "id": prospect_id})
+        with self.store.lock:
+            name = clean_text(payload.get("name"), 120)
+            if len(name) < 2:
+                raise ValueError("name requiere al menos 2 caracteres")
+            stage = clean_text(payload["stage"], 20) if "stage" in payload else "lead"
+            if stage not in STAGES:
+                raise ValueError(f"stage debe ser uno de: {', '.join(STAGES)}")
+            now = utc_now()
+            item = {
+                "id": uuid4().hex[:12],
+                "name": name,
+                "city": clean_text(payload.get("city"), 80),
+                "contact": clean_text(payload.get("contact"), 160),
+                "vertical": clean_text(payload.get("vertical") or "inmobiliaria", 80),
+                "stage": stage,
+                "setup_fee": self._money(payload.get("setup_fee", 0), "setup_fee"),
+                "monthly_fee": self._money(payload.get("monthly_fee", 0), "monthly_fee"),
+                "variable_cost": self._money(payload.get("variable_cost", 0), "variable_cost"),
+                "next_action": clean_text(payload.get("next_action"), 240),
+                "notes": clean_text(payload.get("notes"), 1000),
+                "created_at": now,
+                "updated_at": now,
+            }
+            data = self.store.read()
+            data.setdefault("prospects", []).append(item)
+            data.setdefault("events", []).append({"at": now, "type": "prospect_created", "id": item["id"]})
             self.store.write(data)
             return item
-        raise KeyError(prospect_id)
-
+    def update_prospect(self, prospect_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with self.store.lock:
+            data = self.store.read()
+            for item in data.get("prospects", []):
+                if item.get("id") != prospect_id:
+                    continue
+                if "stage" in payload:
+                    stage = clean_text(payload["stage"], 20)
+                    if stage not in STAGES:
+                        raise ValueError("stage inválido")
+                    item["stage"] = stage
+                for field, limit in (("name", 120), ("city", 80), ("contact", 160), ("vertical", 80), ("next_action", 240), ("notes", 1000)):
+                    if field in payload:
+                        item[field] = clean_text(payload[field], limit)
+                for field in ("setup_fee", "monthly_fee", "variable_cost"):
+                    if field in payload:
+                        item[field] = self._money(payload[field], field)
+                item["updated_at"] = utc_now()
+                data.setdefault("events", []).append({"at": item["updated_at"], "type": "prospect_updated", "id": prospect_id})
+                self.store.write(data)
+                return item
+            raise KeyError(prospect_id)
     def delete_prospect(self, prospect_id: str) -> bool:
-        data = self.store.read()
-        before = len(data.get("prospects", []))
-        data["prospects"] = [item for item in data.get("prospects", []) if item.get("id") != prospect_id]
-        if len(data["prospects"]) == before:
-            return False
-        data.setdefault("events", []).append({"at": utc_now(), "type": "prospect_deleted", "id": prospect_id})
-        self.store.write(data)
-        return True
-
+        with self.store.lock:
+            data = self.store.read()
+            before = len(data.get("prospects", []))
+            data["prospects"] = [item for item in data.get("prospects", []) if item.get("id") != prospect_id]
+            if len(data["prospects"]) == before:
+                return False
+            data.setdefault("events", []).append({"at": utc_now(), "type": "prospect_deleted", "id": prospect_id})
+            self.store.write(data)
+            return True
     def summary(self) -> dict[str, Any]:
         items = self.list_prospects()
         by_stage = {stage: 0 for stage in STAGES}
@@ -223,7 +223,7 @@ class RevenueOS:
         company = clean_text(payload.get("company"), 120)
         if len(company) < 2:
             raise ValueError("company requiere al menos 2 caracteres")
-        slug = f"{safe_slug(company)}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}"
+        slug = f"{safe_slug(company)}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:10]}"
         destination = (self.pilot_root / slug).resolve()
         if self.pilot_root not in destination.parents:
             raise ValueError("Ruta de piloto inválida")

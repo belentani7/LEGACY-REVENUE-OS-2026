@@ -33,13 +33,21 @@ async def security_headers(request: Any, call_next):
         "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
-    if request.url.path == "/":
+    # CRM responses contain client contacts and commercially sensitive numbers.
+    # Do not cache them in the browser, a proxy or an intermediate gateway.
+    if request.url.path == "/" or request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
 
 
 def require_admin(x_admin_key: str | None = Header(default=None)) -> None:
-    if ADMIN_KEY and not (x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY)):
+    """Fail closed: a missing secret must never disable protection on local APIs."""
+    if not ADMIN_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ADMIN_API_KEY must be configured before accessing client data",
+        )
+    if not (x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin key required")
 
 
@@ -100,7 +108,7 @@ def dashboard() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "service": "legacy-revenue-os", "admin_protected": bool(ADMIN_KEY)}
+    return {"status": "ok" if ADMIN_KEY else "setup_required", "service": "legacy-revenue-os", "admin_protected": True, "ready": bool(ADMIN_KEY)}
 
 
 @app.get("/api/prospects", dependencies=[Depends(require_admin)])

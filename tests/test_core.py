@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -83,3 +84,24 @@ def test_pilot_pack_is_bounded_and_complete(engine: RevenueOS):
 def test_slug_never_contains_traversal():
     slug = safe_slug("../../Mi Empresa\\secreta")
     assert "/" not in slug and "\\" not in slug and ".." not in slug
+
+def test_parallel_creates_do_not_lose_customer_records(engine: RevenueOS):
+    """HTTP threads must not lose records between JSON read and replace."""
+    def create(i: int):
+        return engine.create_prospect({"name": f"Empresa {i}", "stage": "lead"})
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        records = list(pool.map(create, range(40)))
+    persisted = engine.list_prospects()
+    assert len(records) == len(persisted) == 40
+    assert len({row["id"] for row in persisted}) == 40
+    assert len({row["name"] for row in persisted}) == 40
+    assert engine.summary()["prospects"] == 40
+
+
+def test_two_pilot_folders_same_company_do_not_collide(engine: RevenueOS):
+    first = engine.create_pilot_pack({"company": "Empresa Repetida"})
+    second = engine.create_pilot_pack({"company": "Empresa Repetida"})
+    assert first["path"] != second["path"]
+    assert Path(first["path"]).is_dir()
+    assert Path(second["path"]).is_dir()
+    assert len(first["files"]) == len(second["files"]) == 6
